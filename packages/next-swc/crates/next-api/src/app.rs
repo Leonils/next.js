@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use indexmap::IndexSet;
 use next_core::{
     app_structure::{
