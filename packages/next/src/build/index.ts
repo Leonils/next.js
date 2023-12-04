@@ -97,7 +97,6 @@ import {
 import type { EventBuildFeatureUsage } from '../telemetry/events'
 import { Telemetry } from '../telemetry/storage'
 import {
-  isDynamicMetadataRoute,
   getPageStaticInfo,
 } from './analysis/get-page-static-info'
 import { createPagesMapping, getPageFilePath, sortByPageExts } from './entries'
@@ -392,6 +391,8 @@ export default async function build(
           })
         )
 
+      const binding = await loadBindings(config?.experimental?.useWasmBinary)
+
       process.env.NEXT_DEPLOYMENT_ID = config.experimental.deploymentId || ''
       NextBuildContext.config = config
 
@@ -645,7 +646,9 @@ export default async function build(
               rootDir,
             })
 
-            const isDynamic = await isDynamicMetadataRoute(pageFilePath)
+            const isDynamic = await binding.analysis.isDynamicMetadataRoute(
+              pageFilePath,
+            )
             if (!isDynamic) {
               delete mappedAppPages[pageKey]
               mappedAppPages[pageKey.replace('[[...__metadata_id__]]/', '')] =
@@ -1049,7 +1052,6 @@ export default async function build(
         const turboJson = findUp.sync('turbo.json', { cwd: dir })
         // eslint-disable-next-line no-shadow
         const packagePath = findUp.sync('package.json', { cwd: dir })
-        let binding = await loadBindings(config?.experimental?.useWasmBinary)
 
         let root =
           turboNextBuildRoot ??

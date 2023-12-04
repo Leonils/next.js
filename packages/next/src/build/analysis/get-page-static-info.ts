@@ -18,6 +18,7 @@ import { isAPIRoute } from '../../lib/is-api-route'
 import { isEdgeRuntime } from '../../lib/is-edge-runtime'
 import { RSC_MODULE_TYPES } from '../../shared/lib/constants'
 import type { RSCMeta } from '../webpack/loaders/get-module-build-info'
+import type { Binding } from '../swc'
 
 // TODO: migrate preferredRegion here
 // Don't forget to update the next-types-plugin file as well
@@ -450,20 +451,6 @@ function warnAboutUnsupportedValue(
   )
 
   warnedUnsupportedValueMap.set(pageFilePath, true)
-}
-
-// Detect if metadata routes is a dynamic route, which containing
-// generateImageMetadata or generateSitemaps as export
-export async function isDynamicMetadataRoute(
-  pageFilePath: string
-): Promise<boolean> {
-  const fileContent = (await tryToReadFile(pageFilePath, true)) || ''
-  if (!/generateImageMetadata|generateSitemaps/.test(fileContent)) return false
-
-  const swcAST = await parseModule(pageFilePath, fileContent)
-  const exportsInfo = checkExports(swcAST, pageFilePath)
-
-  return !exportsInfo.generateImageMetadata || !exportsInfo.generateSitemaps
 }
 
 /**

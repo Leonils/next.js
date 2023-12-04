@@ -2,6 +2,7 @@
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { platform, arch } from 'os'
+import { promises as fs } from 'fs'
 import { platformArchTriples } from 'next/dist/compiled/@napi-rs/triples'
 import * as Log from '../output/log'
 import { getParserOptions } from './options'
@@ -107,6 +108,19 @@ function checkVersionMismatch(pkgData: any) {
   }
 }
 
+async function tryToReadFile(filePath: string, shouldThrow: boolean) {
+  try {
+    return await fs.readFile(filePath, {
+      encoding: 'utf8',
+    })
+  } catch (error: any) {
+    if (shouldThrow) {
+      error.message = `Next.js ERROR: Failed to read file ${filePath}:\n${error.message}`
+      throw error
+    }
+  }
+}
+
 // These are the platforms we'll try to load wasm bindings first,
 // only try to load native bindings if loading wasm binding somehow fails.
 // Fallback to native binding is for migration period only,
@@ -159,6 +173,9 @@ export interface Binding {
       options: ProjectOptions,
       turboEngineOptions?: TurboEngineOptions
     ) => Promise<Project>
+  }
+  analysis: {
+    isDynamicMetadataRoute(pageFilePath: string): Promise<boolean>
   }
   minify: any
   minifySync: any
@@ -1135,6 +1152,12 @@ async function loadWasm(importPath = '') {
           const astStr = bindings.parseSync(src.toString(), options)
           return astStr
         },
+        analysis: {
+          isDynamicMetadataRoute: async (pageFilePath: string) => {
+            const fileContent = (await tryToReadFile(pageFilePath, true)) || ''
+            bindings.isDynamicMetadataRoute(pageFilePath, fileContent)
+          },
+        },
         getTargetTriple() {
           return undefined
         },
@@ -1312,6 +1335,10 @@ function loadNative(importPath?: string) {
 
       parse(src: string, options: any) {
         return bindings.parse(src, toBuffer(options ?? {}))
+      },
+
+      analysis: {
+        isDynamicMetadataRoute: bindings.isDynamicMetadataRoute,
       },
 
       getTargetTriple: bindings.getTargetTriple,

@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use napi::bindgen_prelude::*;
+use napi::{bindgen_prelude::*, JsObject};
+use next_page_static_info::{collect_exports, ExportInfo};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use turbopack_binding::swc::core::{
     base::{config::ParseOptions, try_with_handler},
     common::{
@@ -89,4 +92,88 @@ pub fn parse(
         },
         signal,
     )
+}
+
+/// wrap read file to suppress errors conditionally.
+fn read_file_wrapped_err(path: &str, raise_err: bool) -> Result<String> {
+    let ret = std::fs::read_to_string(path).map_err(|e| {
+        napi::Error::new(
+            Status::GenericFailure,
+            format!("Next.js ERROR: Failed to read file {}:\n{:#?}", path, e),
+        )
+    });
+
+    match ret {
+        Ok(_) | Err(_) if raise_err => ret,
+        _ => Ok("".to_string()),
+    }
+}
+
+/// A regex pattern to determine if is_dynamic_metadata_route should continue to
+/// parse the page or short circuit and return false.
+static DYNAMIC_METADATA_ROUTE_SHORT_CURCUIT: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"generateImageMetadata|generateSitemaps").unwrap());
+
+pub struct DetectMetadataRouteTask {
+    page_file_path: String,
+}
+
+#[napi]
+impl Task for DetectMetadataRouteTask {
+    type Output = ExportInfo;
+    type JsValue = bool;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        let file_content = read_file_wrapped_err(self.page_file_path.as_str(), false)?;
+
+        collect_exports(
+            &file_content,
+            &self.page_file_path,
+            Some(|c| !DYNAMIC_METADATA_ROUTE_SHORT_CURCUIT.is_match(c)),
+        ).convert_err()
+    }
+
+    fn resolve(&mut self, _env: Env, exports_info: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(!exports_info.generate_image_metadata.unwrap_or_default()
+            || !exports_info.generate_sitemaps.unwrap_or_default())
+    }
+}
+
+/// Detect if metadata routes is a dynamic route, which containing
+/// generateImageMetadata or generateSitemaps as export
+#[napi]
+pub fn is_dynamic_metadata_route(page_file_path: String) -> AsyncTask<DetectMetadataRouteTask> {
+    AsyncTask::new(DetectMetadataRouteTask { page_file_path })
+}
+
+#[napi(object, object_to_js = false)]
+pub struct CollectPageStaticInfoOption {
+    pub page_file_path: String,
+    pub next_config: JsObject, // NextConfig
+    pub is_dev: Option<bool>,
+    pub page: Option<String>,
+    pub page_type: String, //'pages' | 'app' | 'root'
+}
+
+pub struct CollectPageStaticInfoTask {}
+
+#[napi]
+impl Task for CollectPageStaticInfoTask {
+    type Output = bool;
+    type JsValue = bool;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        Ok(false)
+    }
+
+    fn resolve(&mut self, _env: Env, result: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(result)
+    }
+}
+
+#[napi]
+pub fn get_page_static_info(
+    option: CollectPageStaticInfoOption,
+) -> AsyncTask<CollectPageStaticInfoTask> {
+    AsyncTask::new(CollectPageStaticInfoTask {})
 }
